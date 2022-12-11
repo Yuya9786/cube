@@ -28,6 +28,7 @@ const (
 
 type Task struct {
 	ID            uuid.UUID
+	ContainerId   string
 	Name          string
 	State         State
 	Image         string
@@ -119,7 +120,7 @@ func (d *Docker) Run() DockerResult {
 		return DockerResult{Error: err}
 	}
 
-    d.ContainerId = resp.ID
+	d.ContainerId = resp.ID
 
 	out, err := d.Client.ContainerLogs(
 		ctx,
@@ -154,5 +155,5 @@ func (d *Docker) Stop() DockerResult {
 		panic(err)
 	}
 
-    return DockerResult{ContainerId: d.ContainerId, Action: "stop", Result: "success"}
+	return DockerResult{ContainerId: d.ContainerId, Action: "stop", Result: "success"}
 }
