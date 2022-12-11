@@ -34,7 +34,7 @@ type Task struct {
 	Image         string
 	Cpu           float64
 	Memory        int64
-	Disk          int
+	Disk          int64
 	ExposedPorts  nat.PortSet
 	PortBindings  map[string]string
 	RestartPolicy string
@@ -64,14 +64,38 @@ type Config struct {
 	Image         string
 	Cpu           float64
 	Memory        int64
+	Disk          int64
 	Env           []string
 	RestartPolicy string
+}
+
+func NewConfig(task *Task) *Config {
+	return &Config{
+		Name:          task.Name,
+		ExposedPorts:  task.ExposedPorts,
+		Image:         task.Image,
+		Cpu:           task.Cpu,
+		Memory:        task.Memory,
+		Disk:          task.Disk,
+		RestartPolicy: task.RestartPolicy,
+	}
 }
 
 type Docker struct {
 	Client      *client.Client
 	Config      Config
 	ContainerId string
+}
+
+func NewDocker(config *Config) (*Docker, error) {
+	dc, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		return nil, err
+	}
+	return &Docker{
+		Client: dc,
+		Config: *config,
+	}, nil
 }
 
 type DockerResult struct {

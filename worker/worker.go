@@ -63,7 +63,15 @@ func (w *Worker) RunTask() task.DockerResult {
 func (w *Worker) StartTask(t task.Task) task.DockerResult {
 	t.StartTime = time.Now().UTC()
 	config := task.NewConfig(&t)
-	d := task.NewDocker(config)
+	d, err := task.NewDocker(config)
+	if err != nil {
+		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
+		t.State = task.Failed
+		w.Db[t.ID] = &t
+		return task.DockerResult{
+			Error: err,
+		}
+	}
 
 	result := d.Run()
 	if result.Error != nil {
@@ -82,11 +90,22 @@ func (w *Worker) StartTask(t task.Task) task.DockerResult {
 
 func (w *Worker) StopTask(t task.Task) task.DockerResult {
 	config := task.NewConfig(&t)
-	d := task.NewDocker(config)
+	d, err := task.NewDocker(config)
+	if err != nil {
+		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
+		t.State = task.Failed
+		w.Db[t.ID] = &t
+		return task.DockerResult{
+			Error: err,
+		}
+	}
 
 	result := d.Stop()
 	if result.Error != nil {
 		log.Printf("Error stopping container %v: %v\n", d.ContainerId, result.Error)
+		t.State = task.Failed
+		w.Db[t.ID] = &t
+		return result
 	}
 	t.FinishTime = time.Now().UTC()
 	t.State = task.Completed
