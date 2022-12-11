@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Yuya9786/cube/manager"
-	"github.com/Yuya9786/cube/node"
 	"github.com/Yuya9786/cube/task"
 	"github.com/Yuya9786/cube/worker"
 	"github.com/docker/docker/client"
@@ -53,61 +51,38 @@ func stopContainer(d *task.Docker) *task.DockerResult {
 }
 
 func main() {
-	t := task.Task{
-		ID:     uuid.New(),
-		Name:   "Task-1",
-		State:  task.Pending,
-		Image:  "Image-1",
-		Memory: 1024,
-		Disk:   1,
-	}
-
-	te := task.TaskEvent{
-		ID:         uuid.New(),
-		State:      task.Pending,
-		Timestatmp: time.Now(),
-		Task:       t,
-	}
-
-	fmt.Printf("task: %v\n", t)
-	fmt.Printf("task event: %v\n", te)
-
+	db := make(map[uuid.UUID]*task.Task)
 	w := worker.Worker{
 		Queue: *queue.New(),
-		Db:    make(map[uuid.UUID]task.Task),
+		Db:    db,
 	}
-	fmt.Printf("worker: %v\n", w)
-	w.CollectState()
-	w.RunTask()
-	w.StartTask()
-	w.StopTask()
 
-	m := manager.Manager{
-		Pending: *queue.New(),
-		TaskDb:  make(map[string][]task.Task),
-		EventDb: make(map[string][]task.TaskEvent),
-		Workers: []string{w.Name},
+	t := task.Task{
+		ID:    uuid.New(),
+		Name:  "test-container-1",
+		State: task.Scheduled,
+		Image: "strm/helloworld-http",
 	}
-	fmt.Printf("manager: %v\n", m)
-	m.SelectWorker()
-	m.UpdateTasks()
-	m.SendTask()
 
-	n := node.Node{
-		Name:   "Node-1",
-		Ip:     "192.168.1.1",
-		Cores:  4,
-		Memory: 1024,
-		Disk:   25,
-		Role:   "worker",
+	// first time the worker will see the task
+	fmt.Println("starting task")
+	w.AddTask(t)
+	result := w.RunTask()
+	if result.Error != nil {
+		panic(result.Error)
 	}
-	fmt.Printf("node: %v\n", n)
 
-	fmt.Println("create a test container")
-	dockerTask, createResult := createContainer()
+	t.ContainerId = result.ContainerId
 
-	time.Sleep(time.Second * 5)
+	fmt.Printf("task %s is running in container %s\n", t.ID, t.ContainerId)
+	fmt.Println("sleepy time")
+	time.Sleep(time.Second * 30)
 
-	fmt.Printf("stopping container %s\n", createResult.ContainerId)
-	_ = stopContainer(dockerTask)
+	fmt.Printf("Stopping task %s\n", t.ID)
+	t.State = task.Completed
+	w.AddTask(t)
+	result = w.RunTask()
+	if result.Error != nil {
+		panic(result.Error)
+	}
 }
