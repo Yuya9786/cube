@@ -100,9 +100,9 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 		}
 	}
 
-	result := d.Stop()
+	result := d.Stop(t.ContainerId)
 	if result.Error != nil {
-		log.Printf("Error stopping container %v: %v\n", d.ContainerId, result.Error)
+		log.Printf("Error stopping container %v: %v\n", t.ContainerId, result.Error)
 		t.State = task.Failed
 		w.Db[t.ID] = &t
 		return result

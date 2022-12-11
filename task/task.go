@@ -84,7 +84,6 @@ func NewConfig(task *Task) *Config {
 type Docker struct {
 	Client      *client.Client
 	Config      Config
-	ContainerId string
 }
 
 func NewDocker(config *Config) (*Docker, error) {
@@ -140,11 +139,15 @@ func (d *Docker) Run() DockerResult {
 	resp, err := d.Client.ContainerCreate(
 		ctx, &cc, &hc, nil, nil, d.Config.Name)
 	if err != nil {
-		log.Printf("Error starting container %s: %v\n", resp.ID, err)
+		log.Printf("Error creating container %s: %v\n", resp.ID, err)
 		return DockerResult{Error: err}
 	}
 
-	d.ContainerId = resp.ID
+    if err := d.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+        log.Printf("Error starting container %s: %v\n", resp.ID, err)
+        return DockerResult{Error: err}
+    }
+
 
 	out, err := d.Client.ContainerLogs(
 		ctx,
@@ -160,11 +163,11 @@ func (d *Docker) Run() DockerResult {
 	return DockerResult{ContainerId: resp.ID, Action: "start", Result: "success"}
 }
 
-func (d *Docker) Stop() DockerResult {
-	log.Printf("Attempting to stop container %v", d.ContainerId)
+func (d *Docker) Stop(id string) DockerResult {
+	log.Printf("Attempting to stop container %v", id)
 	ctx := context.Background()
-	if err := d.Client.ContainerStop(ctx, d.ContainerId, nil); err != nil {
-		log.Printf("Error stopping container %s: %v\n", d.ContainerId, err)
+	if err := d.Client.ContainerStop(ctx, id, nil); err != nil {
+		log.Printf("Error stopping container %s: %v\n", id, err)
 		panic(err)
 	}
 
@@ -174,10 +177,10 @@ func (d *Docker) Stop() DockerResult {
 		Force:         false,
 	}
 
-	if err := d.Client.ContainerRemove(ctx, d.ContainerId, removeOptions); err != nil {
-		log.Printf("Error removing container %s: %v\n", d.ContainerId, err)
+	if err := d.Client.ContainerRemove(ctx, id, removeOptions); err != nil {
+		log.Printf("Error removing container %s: %v\n", id, err)
 		panic(err)
 	}
 
-	return DockerResult{ContainerId: d.ContainerId, Action: "stop", Result: "success"}
+	return DockerResult{ContainerId: id, Action: "stop", Result: "success"}
 }
