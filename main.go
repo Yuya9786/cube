@@ -41,7 +41,7 @@ func createContainer() (*task.Docker, *task.DockerResult) {
 }
 
 func stopContainer(d *task.Docker) *task.DockerResult {
-	result := d.Stop(d.ContainerId)
+	result := d.Stop()
 	if result.Error != nil {
 		fmt.Printf("%v\n", result.Error)
 		return nil

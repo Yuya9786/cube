@@ -119,6 +119,8 @@ func (d *Docker) Run() DockerResult {
 		return DockerResult{Error: err}
 	}
 
+    d.ContainerId = resp.ID
+
 	out, err := d.Client.ContainerLogs(
 		ctx,
 		resp.ID,
@@ -133,11 +135,11 @@ func (d *Docker) Run() DockerResult {
 	return DockerResult{ContainerId: resp.ID, Action: "start", Result: "success"}
 }
 
-func (d *Docker) Stop(id string) DockerResult {
-	log.Printf("Attempting to stop container %v", id)
+func (d *Docker) Stop() DockerResult {
+	log.Printf("Attempting to stop container %v", d.ContainerId)
 	ctx := context.Background()
-	if err := d.Client.ContainerStop(ctx, id, nil); err != nil {
-		log.Printf("Error stopping container %s: %v\n", id, err)
+	if err := d.Client.ContainerStop(ctx, d.ContainerId, nil); err != nil {
+		log.Printf("Error stopping container %s: %v\n", d.ContainerId, err)
 		panic(err)
 	}
 
@@ -147,10 +149,10 @@ func (d *Docker) Stop(id string) DockerResult {
 		Force:         false,
 	}
 
-	if err := d.Client.ContainerRemove(ctx, id, removeOptions); err != nil {
-		log.Printf("Error removing container %s: %v\n", id, err)
+	if err := d.Client.ContainerRemove(ctx, d.ContainerId, removeOptions); err != nil {
+		log.Printf("Error removing container %s: %v\n", d.ContainerId, err)
 		panic(err)
 	}
 
-	return DockerResult{Action: "stop", Result: "success", Error: nil}
+    return DockerResult{ContainerId: d.ContainerId, Action: "stop", Result: "success"}
 }
