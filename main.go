@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
-	"sync"
+	"log"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/Yuya9786/cube/task"
@@ -11,51 +13,38 @@ import (
 	"github.com/google/uuid"
 )
 
-func do() {
-	db := make(map[uuid.UUID]*task.Task)
-	w := worker.Worker{
-		Queue: *queue.New(),
-		Db:    db,
-	}
-
-	t := task.Task{
-		ID:    uuid.New(),
-		State: task.Scheduled,
-		Image: "strm/helloworld-http",
-	}
-
-	// first time the worker will see the task
-	fmt.Println("starting task")
-	w.AddTask(t)
-	result := w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
-	}
-
-	t.ContainerId = result.ContainerId
-
-	fmt.Printf("task %s is running in container %s\n", t.ID, t.ContainerId)
-	fmt.Println("sleepy time")
-	time.Sleep(time.Second * 60)
-
-	fmt.Printf("Stopping task %s\n", t.ID)
-	t.State = task.Completed
-	w.AddTask(t)
-	result = w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
+func runTasks(w *worker.Worker) {
+	for {
+		if w.Queue.Len() != 0 {
+			result := w.RunTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+		} else {
+			log.Printf("No tasks to process currently\n")
+		}
+		log.Printf("Sleeping 10 seconds\n")
+		time.Sleep(10 * time.Second)
 	}
 }
 
 func main() {
-	wg := &sync.WaitGroup{}
+	host := os.Getenv("CUBE_HOST")
+	port, _ := strconv.Atoi(os.Getenv("CUBE_PORT"))
 
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			do()
-			wg.Done()
-		}()
+	fmt.Println("Strting Cube worker")
+
+	w := worker.Worker{
+		Queue: *queue.New(),
+		Db:    make(map[uuid.UUID]*task.Task),
 	}
-	wg.Wait()
+
+	api := worker.Api{
+		Address: host,
+		Port:    port,
+		Worker:  &w,
+	}
+
+	go runTasks(&w)
+	api.Start()
 }
