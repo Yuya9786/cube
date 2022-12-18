@@ -21,8 +21,8 @@ type State int
 const (
 	Pending State = iota
 	Scheduled
-	Completed
 	Running
+	Completed
 	Failed
 )
 
@@ -82,8 +82,8 @@ func NewConfig(task *Task) *Config {
 }
 
 type Docker struct {
-	Client      *client.Client
-	Config      Config
+	Client *client.Client
+	Config Config
 }
 
 func NewDocker(config *Config) (*Docker, error) {
@@ -143,11 +143,10 @@ func (d *Docker) Run() DockerResult {
 		return DockerResult{Error: err}
 	}
 
-    if err := d.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-        log.Printf("Error starting container %s: %v\n", resp.ID, err)
-        return DockerResult{Error: err}
-    }
-
+	if err := d.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		log.Printf("Error starting container %s: %v\n", resp.ID, err)
+		return DockerResult{Error: err}
+	}
 
 	out, err := d.Client.ContainerLogs(
 		ctx,
