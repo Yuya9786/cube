@@ -46,6 +46,8 @@ func main() {
 	}
 
 	go runTasks(&w)
+	go w.CollectState()
+
 	log.Printf("Starting API %v:%v\n", api.Address, api.Port)
 	api.Start()
 }
