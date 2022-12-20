@@ -3,6 +3,7 @@ module github.com/Yuya9786/cube
 go 1.18
 
 require (
+	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/go-chi/chi/v5 v5.0.8
