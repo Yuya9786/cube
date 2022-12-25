@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Yuya9786/cube/manager"
 	"github.com/Yuya9786/cube/task"
 	"github.com/Yuya9786/cube/worker"
 	"github.com/golang-collections/collections/queue"
@@ -49,5 +50,39 @@ func main() {
 	go w.CollectState()
 
 	log.Printf("Starting API %v:%v\n", api.Address, api.Port)
-	api.Start()
+	go api.Start()
+
+	workers := []string{fmt.Sprintf("%s:%d", host, port)}
+	m := manager.New(workers)
+
+	for i := 0; i < 3; i++ {
+		t := task.Task{
+			ID:    uuid.New(),
+			Name:  fmt.Sprintf("test-container-%d", i),
+			State: task.Scheduled,
+			Image: "strm/helloworld-http",
+		}
+		te := task.TaskEvent{
+			ID:    uuid.New(),
+			State: task.Running,
+			Task:  t,
+		}
+		m.AddTask(te)
+		m.SendTask()
+	}
+
+	go func() {
+		for {
+			fmt.Printf("[Manager] Updating tasks from %d workers\n", len(m.Workers))
+			m.UpdateTasks()
+			time.Sleep(15 * time.Second)
+		}
+	}()
+
+	for {
+		for _, t := range m.TaskDb {
+			fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
+			time.Sleep(15 * time.Second)
+		}
+	}
 }
