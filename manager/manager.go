@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/Yuya9786/cube/task"
 	"github.com/Yuya9786/cube/worker"
@@ -53,6 +54,15 @@ func (m *Manager) SelectWorker() string {
 	}
 
 	return m.Workers[newWorker]
+}
+
+func (m *Manager) ProcessTasks() {
+	for {
+		log.Println("Processing any task in the queue")
+		m.SendTask()
+		log.Println("Sleeping for 10 seconds")
+		time.Sleep(10 * time.Second)
+	}
 }
 
 func (m *Manager) SendTask() {
@@ -108,7 +118,7 @@ func (m *Manager) SendTask() {
 	}
 }
 
-func (m *Manager) UpdateTasks() {
+func (m *Manager) updateTasks() {
 	for _, w := range m.Workers {
 		log.Printf("Checking worker %v for task updates", w)
 		url := fmt.Sprintf("http://%s/tasks", w)
@@ -155,6 +165,24 @@ func (m *Manager) UpdateTasks() {
 	}
 }
 
+func (m *Manager) UpdateTasks() {
+	for {
+		log.Println("Checking for task updates from workers")
+		m.UpdateTasks()
+		log.Println("Task updates completed")
+		log.Println("Sleeping for 10 seconds")
+		time.Sleep(time.Second * 10)
+	}
+}
 func (m *Manager) AddTask(te task.TaskEvent) {
 	m.Pending.Enqueue(te)
+}
+
+func (m *Manager) GetTasks() []*task.Task {
+	tasks := []*task.Task{}
+	for _, t := range m.TaskDb {
+		tasks = append(tasks, t)
+	}
+
+	return tasks
 }
