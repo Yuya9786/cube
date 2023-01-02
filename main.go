@@ -30,6 +30,7 @@ func main() {
 
 	go w.RunTasks()
 	go w.CollectState()
+	go w.UpdateTasks()
 	go wapi.Start()
 
 	fmt.Println("Starting Cube manager")
@@ -40,6 +41,7 @@ func main() {
 
 	go m.ProcessTasks()
 	go m.UpdateTasks()
+	go m.DoHalthChecks()
 
 	mapi.Start()
 }

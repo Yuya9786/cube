@@ -143,3 +143,52 @@ func (w *Worker) GetTasks() []*task.Task {
 	}
 	return tasks
 }
+
+func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
+	config := task.NewConfig(&t)
+	d, err := task.NewDocker(config)
+	if err != nil {
+		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
+		t.State = task.Failed
+		w.Db[t.ID] = &t
+		return task.DockerInspectResponse{
+			Error: err,
+		}
+	}
+
+	return d.Inspect(t.ContainerId)
+}
+
+func (w *Worker) UpdateTasks() {
+	for {
+		log.Println("Checking status of tasks")
+		w.updateTasks()
+		log.Println("Task updates completed")
+		log.Println("Sleeping for 15 seconds")
+		time.Sleep(15 * time.Second)
+	}
+}
+
+func (w *Worker) updateTasks() {
+	for id, t := range w.Db {
+		if t.State == task.Running {
+			resp := w.InspectTask(*t)
+			if resp.Error != nil {
+				log.Printf("Error inspecting for state of task %s: %v\n", id, resp.Error)
+			}
+
+			if resp.Container == nil {
+				log.Printf("No container for running task %s\n", id)
+				w.Db[id].State = task.Failed
+			}
+
+			if resp.Container.State.Status == "exited" {
+				log.Printf("Container for task %s in not-running state %s\n", id,
+					resp.Container.State.Status)
+				w.Db[id].State = task.Failed
+			}
+
+			w.Db[id].HostPorts = resp.Container.NetworkSettings.NetworkSettingsBase.Ports
+		}
+	}
+}
