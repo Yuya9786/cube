@@ -147,7 +147,7 @@ func (d *Docker) Run() DockerResult {
 	resp, err := d.Client.ContainerCreate(
 		ctx, &cc, &hc, nil, nil, d.Config.Name)
 	if err != nil {
-		log.Printf("Error creating container %s: %v\n", resp.ID, err)
+		log.Printf("Error creating container using image %s: %v\n", d.Config.Image, err)
 		return DockerResult{Error: err}
 	}
 
