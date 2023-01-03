@@ -57,7 +57,7 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	te := task.TaskEvent{
 		ID:         uuid.New(),
-		State:      task.Completed,
+		Action:     task.Stop,
 		Timestatmp: time.Now(),
 	}
 

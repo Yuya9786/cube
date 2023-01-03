@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/Yuya9786/cube/task"
 	"github.com/go-chi/chi/v5"
@@ -34,7 +35,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.Worker.AddTask(te.Task)
+	a.Worker.AddTask(te)
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
@@ -54,9 +55,13 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 	}
 
-	taskCopy := *taskToStop
-	taskCopy.State = task.Completed
-	a.Worker.AddTask(taskCopy)
+	te := task.TaskEvent{
+		ID:         uuid.New(),
+		Action:     task.Stop,
+		Timestatmp: time.Now(),
+		Task:       *taskToStop,
+	}
+	a.Worker.AddTask(te)
 
 	log.Printf("Added task %v to stop container %v\n",
 		taskToStop.ID, taskToStop.ContainerId)

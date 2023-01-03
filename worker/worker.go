@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -29,38 +30,46 @@ func (w *Worker) CollectState() {
 	}
 }
 
-func (w *Worker) AddTask(t task.Task) {
-	w.Queue.Enqueue(t)
+func (w *Worker) AddTask(te *task.TaskEvent) {
+	w.Queue.Enqueue(te)
 }
 
 func (w *Worker) runTask() task.DockerResult {
-	t := w.Queue.Dequeue()
-	if t == nil {
+	te := w.Queue.Dequeue()
+	if te == nil {
 		log.Println("No tasks in the queue")
 		return task.DockerResult{Error: nil}
 	}
 
-	taskQueued := t.(task.Task)
+	taskEventQueued := te.(*task.TaskEvent)
 
-	taskPersisted := w.Db[taskQueued.ID]
+	taskPersisted := w.Db[taskEventQueued.Task.ID]
 	if taskPersisted == nil {
-		taskPersisted = &taskQueued
-		w.Db[taskQueued.ID] = &taskQueued
+		taskPersisted = &taskEventQueued.Task
+		w.Db[taskEventQueued.Task.ID] = &taskEventQueued.Task
 	}
 
 	var result task.DockerResult
-	if task.ValidStateTransition(taskPersisted.State, taskQueued.State) {
-		switch taskQueued.State {
-		case task.Scheduled:
-			result = w.StartTask(taskQueued)
-		case task.Completed:
-			result = w.StopTask(taskQueued)
+	if taskPersisted.FSM.Can(taskEventQueued.Action) {
+		switch taskEventQueued.Action {
+		case task.Start:
+			result = w.StartTask(&taskEventQueued.Task)
+		case task.Stop:
+			result = w.StopTask(&taskEventQueued.Task)
+		case task.Restart:
+			result = w.RestartTask(&taskEventQueued.Task)
 		default:
 			result.Error = errors.New("We choud not get here")
 		}
 	} else {
-		err := fmt.Errorf("Invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
+		err := fmt.Errorf("Invalid transition from %v by %v", taskPersisted.FSM.Current(), taskEventQueued.Action)
 		result.Error = err
+	}
+
+	if result.Error == nil {
+		if err := taskPersisted.FSM.Event(context.Background(), taskEventQueued.Action); err != nil {
+			result.Error = err
+		}
 	}
 
 	return result
@@ -76,19 +85,18 @@ func (w *Worker) RunTasks() {
 		} else {
 			log.Printf("No tasks to process currently\n")
 		}
-		log.Printf("Sleeping 10 seconds\n")
 		time.Sleep(10 * time.Second)
 	}
 }
 
-func (w *Worker) StartTask(t task.Task) task.DockerResult {
+func (w *Worker) StartTask(t *task.Task) task.DockerResult {
 	t.StartTime = time.Now().UTC()
-	config := task.NewConfig(&t)
+	config := task.NewConfig(t)
 	d, err := task.NewDocker(config)
 	if err != nil {
 		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
-		t.State = task.Failed
-		w.Db[t.ID] = &t
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
 		return task.DockerResult{
 			Error: err,
 		}
@@ -97,25 +105,29 @@ func (w *Worker) StartTask(t task.Task) task.DockerResult {
 	result := d.Run()
 	if result.Error != nil {
 		log.Printf("Error running task %v: %v\n", t.ID, result.Error)
-		t.State = task.Failed
-		w.Db[t.ID] = &t
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
 		return result
 	}
 
 	t.ContainerId = result.ContainerId
-	t.State = task.Running
-	w.Db[t.ID] = &t
+	if err := t.FSM.Event(context.Background(), task.Start); err != nil {
+		return task.DockerResult{
+			Error: err,
+		}
+	}
+	w.Db[t.ID] = t
 
 	return result
 }
 
-func (w *Worker) StopTask(t task.Task) task.DockerResult {
-	config := task.NewConfig(&t)
+func (w *Worker) StopTask(t *task.Task) task.DockerResult {
+	config := task.NewConfig(t)
 	d, err := task.NewDocker(config)
 	if err != nil {
 		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
-		t.State = task.Failed
-		w.Db[t.ID] = &t
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
 		return task.DockerResult{
 			Error: err,
 		}
@@ -124,14 +136,46 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 	result := d.Stop(t.ContainerId)
 	if result.Error != nil {
 		log.Printf("Error stopping container %v: %v\n", t.ContainerId, result.Error)
-		t.State = task.Failed
-		w.Db[t.ID] = &t
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
 		return result
 	}
 	t.FinishTime = time.Now().UTC()
-	t.State = task.Completed
-	w.Db[t.ID] = &t
+	t.FSM.Event(context.Background(), task.Stop)
+	w.Db[t.ID] = t
 	log.Printf("Stopped and removed container %v for task %v", t.ContainerId, t.ID)
+
+	return result
+}
+
+func (w *Worker) RestartTask(t *task.Task) task.DockerResult {
+	t.StartTime = time.Now().UTC()
+	config := task.NewConfig(t)
+	d, err := task.NewDocker(config)
+	if err != nil {
+		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
+		return task.DockerResult{
+			Error: err,
+		}
+	}
+
+	result := d.Restart(t.ContainerId)
+	if result.Error != nil {
+		log.Printf("Error running task %v: %v\n", t.ID, result.Error)
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
+		return result
+	}
+
+	t.ContainerId = result.ContainerId
+	if err := t.FSM.Event(context.Background(), task.Restart); err != nil {
+		return task.DockerResult{
+			Error: err,
+		}
+	}
+	w.Db[t.ID] = t
 
 	return result
 }
@@ -144,13 +188,13 @@ func (w *Worker) GetTasks() []*task.Task {
 	return tasks
 }
 
-func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
-	config := task.NewConfig(&t)
+func (w *Worker) InspectTask(t *task.Task) task.DockerInspectResponse {
+	config := task.NewConfig(t)
 	d, err := task.NewDocker(config)
 	if err != nil {
 		log.Printf("Error preparing for runnig task %v: %v\n", t.ID, err)
-		t.State = task.Failed
-		w.Db[t.ID] = &t
+		t.FSM.Event(context.Background(), task.Fail)
+		w.Db[t.ID] = t
 		return task.DockerInspectResponse{
 			Error: err,
 		}
@@ -164,28 +208,27 @@ func (w *Worker) UpdateTasks() {
 		log.Println("Checking status of tasks")
 		w.updateTasks()
 		log.Println("Task updates completed")
-		log.Println("Sleeping for 15 seconds")
 		time.Sleep(15 * time.Second)
 	}
 }
 
 func (w *Worker) updateTasks() {
 	for id, t := range w.Db {
-		if t.State == task.Running {
-			resp := w.InspectTask(*t)
+		if t.FSM.Current() == task.Running {
+			resp := w.InspectTask(t)
 			if resp.Error != nil {
 				log.Printf("Error inspecting for state of task %s: %v\n", id, resp.Error)
 			}
 
 			if resp.Container == nil {
 				log.Printf("No container for running task %s\n", id)
-				w.Db[id].State = task.Failed
+				w.Db[id].FSM.Event(context.Background(), task.Fail)
 			}
 
 			if resp.Container.State.Status == "exited" {
 				log.Printf("Container for task %s in not-running state %s\n", id,
 					resp.Container.State.Status)
-				w.Db[id].State = task.Failed
+				w.Db[id].FSM.Event(context.Background(), task.Fail)
 			}
 
 			w.Db[id].HostPorts = resp.Container.NetworkSettings.NetworkSettingsBase.Ports

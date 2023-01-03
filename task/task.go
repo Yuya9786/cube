@@ -14,23 +14,14 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
-)
-
-type State int
-
-const (
-	Pending State = iota
-	Scheduled
-	Running
-	Completed
-	Failed
+	"github.com/looplab/fsm"
 )
 
 type Task struct {
 	ID            uuid.UUID
 	ContainerId   string
 	Name          string
-	State         State
+	FSM           *fsm.FSM
 	Image         string
 	Cpu           float64
 	Memory        int64
@@ -52,7 +43,7 @@ type Task struct {
 */
 type TaskEvent struct {
 	ID         uuid.UUID
-	State      State
+	Action     string
 	Timestatmp time.Time
 	Task       Task
 }
@@ -192,6 +183,16 @@ func (d *Docker) Stop(id string) DockerResult {
 	return DockerResult{ContainerId: id, Action: "stop", Result: "success"}
 }
 
+func (d *Docker) Restart(id string) DockerResult {
+	log.Printf("Attempting to restart container %v", id)
+	ctx := context.Background()
+	if err := d.Client.ContainerRestart(ctx, id, nil); err != nil {
+		log.Printf("Error stopping container %s: %v\n", id, err)
+		panic(err)
+	}
+
+	return DockerResult{ContainerId: id, Action: "restart", Result: "success"}
+}
 func (d *Docker) Inspect(id string) DockerInspectResponse {
 	ctx := context.Background()
 	resp, err := d.Client.ContainerInspect(ctx, id)

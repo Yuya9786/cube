@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,7 +82,7 @@ func (m *Manager) SendTask() {
 		m.WorkerTaskMap[w] = append(m.WorkerTaskMap[w], t.ID)
 		m.TaskWorkerMap[t.ID] = w
 
-		t.State = task.Scheduled
+		t.FSM = task.NewFSM()
 		m.TaskDb[t.ID] = &t
 
 		data, err := json.Marshal(te)
@@ -157,8 +158,8 @@ func (m *Manager) updateTasks() {
 				log.Printf("Task with %v not found\n", t.ID)
 				return
 			}
-			if m.TaskDb[t.ID].State != t.State {
-				m.TaskDb[t.ID].State = t.State
+			if m.TaskDb[t.ID].FSM.Current() != t.FSM.Current() {
+				m.TaskDb[t.ID].FSM = t.FSM
 			}
 
 			m.TaskDb[t.ID].StartTime = t.StartTime
@@ -174,7 +175,6 @@ func (m *Manager) UpdateTasks() {
 		log.Println("Checking for task updates from workers")
 		m.updateTasks()
 		log.Println("Task updates completed")
-		log.Println("Sleeping for 10 seconds")
 		time.Sleep(time.Second * 10)
 	}
 }
@@ -199,8 +199,6 @@ func getHostPort(ports nat.PortMap) *string {
 }
 
 func (m *Manager) checkTaskHealth(t task.Task) error {
-	log.Printf("Calling health check for task %s: %s\n", t.ID, t.HealthCheck)
-
 	w := m.TaskWorkerMap[t.ID]
 	hostPort := getHostPort(t.HostPorts)
 	worker := strings.Split(w, ":")
@@ -227,14 +225,16 @@ func (m *Manager) checkTaskHealth(t task.Task) error {
 func (m *Manager) restartTask(t *task.Task) error {
 	// Get the worker where the task was running
 	w := m.TaskWorkerMap[t.ID]
-	t.State = task.Scheduled
+	if err := t.FSM.Event(context.Background(), task.Restart); err != nil {
+		return fmt.Errorf("Unable to transition task %v: %w", t, err)
+	}
 	t.RestartCount++
 	// Overwite the existing task to ensure it has the current state
 	m.TaskDb[t.ID] = t
 
 	te := task.TaskEvent{
 		ID:         uuid.New(),
-		State:      task.Running,
+		Action:     task.Restart,
 		Timestatmp: time.Now(),
 		Task:       *t,
 	}
@@ -270,14 +270,14 @@ func (m *Manager) restartTask(t *task.Task) error {
 
 func (m *Manager) doHealthChecks() {
 	for _, t := range m.TaskDb {
-		if t.State == task.Running && t.RestartCount < 3 {
+		if t.FSM.Current() == task.Running && t.RestartCount < 3 {
 			err := m.checkTaskHealth(*t)
 			if err != nil {
 				if err = m.restartTask(t); err != nil {
 					log.Println(err)
 				}
 			}
-		} else if t.State == task.Failed && t.RestartCount < 3 {
+		} else if t.FSM.Current() == task.Failed && t.RestartCount < 3 {
 			if err := m.restartTask(t); err != nil {
 				log.Println(err)
 			}
@@ -290,7 +290,6 @@ func (m *Manager) DoHalthChecks() {
 		log.Println("Performing task health check")
 		m.doHealthChecks()
 		log.Println("Task health checks completed")
-		log.Println("Sleeping for 60 seconds")
 		time.Sleep(60 * time.Second)
 	}
 }
