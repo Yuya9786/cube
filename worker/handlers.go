@@ -35,7 +35,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.Worker.AddTask(te)
+	a.Worker.AddTask(&te)
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
@@ -61,7 +61,7 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		Timestatmp: time.Now(),
 		Task:       *taskToStop,
 	}
-	a.Worker.AddTask(te)
+	a.Worker.AddTask(&te)
 
 	log.Printf("Added task %v to stop container %v\n",
 		taskToStop.ID, taskToStop.ContainerId)

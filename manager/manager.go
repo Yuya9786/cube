@@ -178,7 +178,8 @@ func (m *Manager) UpdateTasks() {
 		time.Sleep(time.Second * 10)
 	}
 }
-func (m *Manager) AddTask(te task.TaskEvent) {
+
+func (m *Manager) AddTask(te *task.TaskEvent) {
 	m.Pending.Enqueue(te)
 }
 
@@ -198,7 +199,7 @@ func getHostPort(ports nat.PortMap) *string {
 	return nil
 }
 
-func (m *Manager) checkTaskHealth(t task.Task) error {
+func (m *Manager) checkTaskHealth(t *task.Task) error {
 	w := m.TaskWorkerMap[t.ID]
 	hostPort := getHostPort(t.HostPorts)
 	worker := strings.Split(w, ":")
@@ -271,7 +272,7 @@ func (m *Manager) restartTask(t *task.Task) error {
 func (m *Manager) doHealthChecks() {
 	for _, t := range m.TaskDb {
 		if t.FSM.Current() == task.Running && t.RestartCount < 3 {
-			err := m.checkTaskHealth(*t)
+			err := m.checkTaskHealth(t)
 			if err != nil {
 				if err = m.restartTask(t); err != nil {
 					log.Println(err)

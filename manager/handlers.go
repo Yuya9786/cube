@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -29,7 +30,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.Manager.AddTask(te)
+	a.Manager.AddTask(&te)
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
@@ -44,7 +45,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
-		log.Printf("No taskID passed in request\n")
+		log.Println("No taskID passed in request")
 		w.WriteHeader(400)
 	}
 
@@ -59,12 +60,14 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		ID:         uuid.New(),
 		Action:     task.Stop,
 		Timestatmp: time.Now(),
+		Task:       *taskToStop,
 	}
 
-	taskCopy := *taskToStop
-	taskCopy.State = task.Completed
-	te.Task = taskCopy
-	a.Manager.AddTask(te)
+	if err := taskToStop.FSM.Event(context.Background(), "Stop"); err != nil {
+		log.Printf("Unable to transit state from %s by \"Stop\"\n", taskToStop.FSM.Current())
+	}
+
+	a.Manager.AddTask(&te)
 
 	log.Printf("Added task event %v to stop task %v\n", te.ID, taskToStop.ID)
 	w.WriteHeader(204)
